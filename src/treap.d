@@ -81,7 +81,7 @@ template Treap (T) {
         return gen.front();
     }
 
-    int implicitKeyOf (TreapNode* n) {
+    private int implicitKeyOf (TreapNode* n) {
         pragma(inline);
         assert(n !is null);
         if (n.child[0] is null) {
@@ -91,6 +91,7 @@ template Treap (T) {
     }
 
     class Treap {
+        import std.exception: enforce;
         private:
             size_t lengthPayload;
             TreapNode* root;
@@ -101,6 +102,9 @@ template Treap (T) {
         }
 
         void insert (size_t index, T value) {
+            enforce(index <= length());
+            lengthPayload++;
+
             if (root is null) {
                 root = new TreapNode(value, null);
                 return;
@@ -142,17 +146,85 @@ template Treap (T) {
                 cur.aggregation();
             }
 
-            // 回転で根が変更
-            if (cur.parent is null) {
-                root = cur;
+            // 集約を親に伝搬
+            while (true) {
+                if (cur.parent is null) {
+                    break;
+                }
+                cur = cur.parent;
+                cur.aggregation();
+            }
+
+            root = cur;
+        }
+
+        void remove (size_t index) {
+            enforce(index < length());
+            lengthPayload--;
+
+            if (length() == 0) {
+                root = null;
+                return;
+            }
+
+            // 該当要素を検索
+            TreapNode* cur = root;
+
+            while (true) {
+                int key = implicitKeyOf(cur);
+                if (index + 1 == key) {
+                    break;
+                }
+                if (index < key) {
+                    cur = cur.child[0];
+                }
+                else {
+                    cur = cur.child[1];
+                    index -= key;
+                }
+            }
+
+            // 葉になるまで回転
+            while (true) {
+                if (cur.child[0] is null && cur.child[1] is null) {
+                    break;
+                }
+                uint lp = 0;
+                if (cur.child[0] !is null) {
+                    lp = cur.child[0].priority;
+                }
+                uint rp = 0;
+                if (cur.child[1] !is null) {
+                    rp = cur.child[1].priority;
+                }
+
+                if (lp < rp) {
+                    cur.rotateLeft();
+                }
+                else {
+                    cur.rotateRight();
+                }
+            }
+
+            // リンクの切断
+            if (cur.parent.child[0] == cur) {
+                cur.parent.child[0] = null;
+            }
+            if (cur.parent.child[1] == cur) {
+                cur.parent.child[1] = null;
             }
 
             // 集約を親に伝搬
             cur = cur.parent;
-            while (cur !is null) {
+            while (true) {
                 cur.aggregation();
+                if (cur.parent is null) {
+                    break;
+                }
                 cur = cur.parent;
             }
+
+            root = cur;
         }
 
         private void debugDfs () {
@@ -188,11 +260,10 @@ void main () {
     foreach (i; 0 .. 100) {
         A.insert(i, i);
     }
-
+    A.debugDfs();
     foreach (i; 0 .. 100) {
-        A.remove(i);
+        A.remove(0);
     }
 
-    //A.debugDfs();
     return;
 }
