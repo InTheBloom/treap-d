@@ -6,9 +6,9 @@ template Treap (T) {
         TreapNode* parent;
         TreapNode*[2] child;
 
-        this (T _value, TreapNode* _parent) {
+        this (T _value, uint _priority, TreapNode* _parent) {
             size = 1;
-            priority = randomValue();
+            priority = _priority;
             value = _value;
             parent = _parent;
         }
@@ -66,22 +66,7 @@ template Treap (T) {
         }
     }
 
-    private uint randomValue () {
-        pragma(inline);
-        import std.random;
-        static Xorshift gen;
-        static bool init = false;
-        if (init) {
-            gen.popFront();
-            return gen.front();
-        }
-        gen.seed(unpredictableSeed());
-        init = true;
-
-        return gen.front();
-    }
-
-    private int implicitKeyOf (TreapNode* n) {
+    private int implicitKeyOf (const TreapNode* n) {
         pragma(inline);
         assert(n !is null);
         if (n.child[0] is null) {
@@ -92,13 +77,24 @@ template Treap (T) {
 
     class Treap {
         import std.exception: enforce;
+        import std.random;
         private:
             size_t lengthPayload;
             TreapNode* root;
+            Xorshift gen;
 
         this (size_t N) {
+            T[] A;
+            this(A);
         }
         this (InputRange) (InputRange r) {
+            gen.seed(unpredictableSeed());
+        }
+
+        private uint randomValue () {
+            uint ret = gen.front();
+            gen.popFront();
+            return ret;
         }
 
         void insert (size_t index, T value) {
@@ -106,7 +102,7 @@ template Treap (T) {
             lengthPayload++;
 
             if (root is null) {
-                root = new TreapNode(value, null);
+                root = new TreapNode(value, randomValue(), null);
                 return;
             }
 
@@ -130,7 +126,7 @@ template Treap (T) {
             }
 
             // ノードを作成
-            cur.child[direction] = new TreapNode(value, cur);
+            cur.child[direction] = new TreapNode(value, randomValue(), cur);
             cur = cur.child[direction];
 
             // 優先度条件を満たすまで回転
@@ -168,21 +164,7 @@ template Treap (T) {
             }
 
             // 該当要素を検索
-            TreapNode* cur = root;
-
-            while (true) {
-                int key = implicitKeyOf(cur);
-                if (index + 1 == key) {
-                    break;
-                }
-                if (index < key) {
-                    cur = cur.child[0];
-                }
-                else {
-                    cur = cur.child[1];
-                    index -= key;
-                }
-            }
+            TreapNode* cur = find(index);
 
             // 葉になるまで回転
             while (true) {
@@ -227,6 +209,91 @@ template Treap (T) {
             root = cur;
         }
 
+        private TreapNode* find (size_t index) {
+            enforce(index < length());
+
+            TreapNode* cur = root;
+
+            while (true) {
+                int key = implicitKeyOf(cur);
+                if (index + 1 == key) {
+                    break;
+                }
+                if (index < key) {
+                    cur = cur.child[0];
+                }
+                else {
+                    cur = cur.child[1];
+                    index -= key;
+                }
+            }
+            return cur;
+        }
+
+        // indexアクセス
+        T opIndex (size_t i) {
+            enforce(0 <= i && i < length());
+            return find(i).value;
+        }
+
+        // indexアクセス + 代入
+        T opIndexAssign (T value, size_t i) {
+            enforce(0 <= i && i < length());
+            return find(i).value = value;
+        }
+
+        // スライス
+        size_t[2] opSlice (size_t i, size_t j) {
+            enforce(0 <= i && i < length());
+            enforce(0 <= j && j <= length());
+            enforce(i <= j);
+            size_t[2] ret = [i, j];
+            return ret;
+        }
+
+        // スライス + 代入（指定なし）
+        void opIndexAssign (T value) {
+            opIndexAssign(value, opSlice(0, length()));
+        }
+
+        // スライス + 代入
+        void opIndexAssign (T value, size_t[2] slice) {
+            foreach (i; slice[0] .. slice[1]) {
+                opIndexAssign(value, i);
+            }
+        }
+
+        // スライス + 代入演算子（指定なし）
+        void opIndexOpAssign (string op) (T value) {
+            opIndexOpAssign(value, opSlice(0, length()));
+        }
+
+        // スライス + 代入演算子
+        void opIndexOpAssign (string op) (T value, size_t[2] slice) {
+            import std.stdio;
+            writeln(slice);
+            foreach (i; slice[0] .. slice[1]) {
+                opIndexOpAssign!(op)(value, i);
+            }
+        }
+
+        // indexアクセス + 代入演算子
+        T opIndexOpAssign (string op) (T value, size_t i) {
+            enforce(0 <= i && i < length());
+            return mixin("find(i).value" ~ op ~ "= value");
+        }
+
+        // indexアクセス + 単項演算子
+        T opIndexUnary (string op) (size_t i) {
+            enforce(0 <= i && i < length());
+            return mixin(op ~ "find(i).value");
+        }
+
+        // $のindex変換
+        size_t opDollar () const {
+            return length();
+        }
+
         private void debugDfs () {
             if (root is null) {
                 return;
@@ -258,12 +325,21 @@ void main () {
 
     auto A = new Treap!(int)(10);
     foreach (i; 0 .. 100) {
-        A.insert(i, i);
+        A.insert(0, i);
     }
     A.debugDfs();
+
+    A[99];
+    ++A[99];
+    --A[99];
+    -A[99];
+    ~A[99];
+    A[0] += 1;
+    A[0] /= 10;
+    A[0 .. $] += 1;
     foreach (i; 0 .. 100) {
-        A.remove(0);
     }
+
 
     return;
 }
