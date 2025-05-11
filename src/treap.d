@@ -243,7 +243,7 @@ template Treap (T) {
         }
 
         // スライス
-        size_t[2] opSlice (size_t i, size_t j) {
+        size_t[2] opSlice (size_t dim = 0) (size_t i, size_t j) {
             enforce(0 <= i && i < length());
             enforce(0 <= j && j <= length());
             enforce(i <= j);
@@ -270,8 +270,6 @@ template Treap (T) {
 
         // スライス + 代入演算子
         void opIndexOpAssign (string op) (T value, size_t[2] slice) {
-            import std.stdio;
-            writeln(slice);
             foreach (i; slice[0] .. slice[1]) {
                 opIndexOpAssign!(op)(value, i);
             }
@@ -336,10 +334,11 @@ void main () {
     ~A[99];
     A[0] += 1;
     A[0] /= 10;
-    A[0 .. $] += 1;
-    foreach (i; 0 .. 100) {
+    A[0 .. 10] += 10;
+    A[3 .. 5] = 1;
+
+    foreach (i; 0 .. 10) {
+        writeln(A[i]);
     }
-
-
     return;
 }
