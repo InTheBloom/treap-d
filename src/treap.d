@@ -78,16 +78,26 @@ template Treap (T) {
     class Treap {
         import std.exception: enforce;
         import std.random;
-        private:
+        import std.range.primitives: isInputRange;
+        import std.range: iota, enumerate;
+        import std.algorithm: map;
+        import std.traits: isImplicitlyConvertible, ForeachType;
+        import std.conv: to;
+        private {
             size_t lengthPayload;
             TreapNode* root;
             Xorshift gen;
+        }
 
         this (size_t N) {
-            T[] A;
-            this(A);
+            this(iota(N).map!(a => T.init));
         }
-        this (InputRange) (InputRange r) {
+        this (Irange) (Irange r)
+            if (isInputRange!(Irange) && isImplicitlyConvertible!(ForeachType!(Irange), T))
+        {
+            foreach (i, value; r.enumerate(0)) {
+                insert(i, value);
+            }
             gen.seed(unpredictableSeed());
         }
 
@@ -242,39 +252,6 @@ template Treap (T) {
             return find(i).value = value;
         }
 
-        // スライス
-        size_t[2] opSlice (size_t dim = 0) (size_t i, size_t j) {
-            enforce(0 <= i && i < length());
-            enforce(0 <= j && j <= length());
-            enforce(i <= j);
-            size_t[2] ret = [i, j];
-            return ret;
-        }
-
-        // スライス + 代入（指定なし）
-        void opIndexAssign (T value) {
-            opIndexAssign(value, opSlice(0, length()));
-        }
-
-        // スライス + 代入
-        void opIndexAssign (T value, size_t[2] slice) {
-            foreach (i; slice[0] .. slice[1]) {
-                opIndexAssign(value, i);
-            }
-        }
-
-        // スライス + 代入演算子（指定なし）
-        void opIndexOpAssign (string op) (T value) {
-            opIndexOpAssign(value, opSlice(0, length()));
-        }
-
-        // スライス + 代入演算子
-        void opIndexOpAssign (string op) (T value, size_t[2] slice) {
-            foreach (i; slice[0] .. slice[1]) {
-                opIndexOpAssign!(op)(value, i);
-            }
-        }
-
         // indexアクセス + 代入演算子
         T opIndexOpAssign (string op) (T value, size_t i) {
             enforce(0 <= i && i < length());
@@ -315,6 +292,18 @@ template Treap (T) {
         size_t length () const {
             return lengthPayload;
         }
+
+        override string toString () {
+            string ret = "[";
+            foreach (i; 0 .. length()) {
+                ret ~= find(i).value.to!string;
+                if (i < length() - 1) {
+                    ret ~= ", ";
+                }
+            }
+            ret ~= "]";
+            return ret;
+        }
     }
 }
 
@@ -322,6 +311,7 @@ void main () {
     import std;
 
     auto A = new Treap!(int)(10);
+    writeln(A);
     foreach (i; 0 .. 100) {
         A.insert(0, i);
     }
@@ -334,8 +324,6 @@ void main () {
     ~A[99];
     A[0] += 1;
     A[0] /= 10;
-    A[0 .. 10] += 10;
-    A[3 .. 5] = 1;
 
     foreach (i; 0 .. 10) {
         writeln(A[i]);
