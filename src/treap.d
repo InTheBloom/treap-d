@@ -1,8 +1,21 @@
-template Treap (T) {
+alias Treap (T) = InternalTreap!(T, false, false, false).Treap;
+alias Treap (T, alias op, alias e) = InternalTreap!(T, true, op, e).Treap;
+
+template InternalTreap (T, bool ENABLE_MONOID_PRODUCT, alias op, alias e)
+    if (!ENABLE_MONOID_PRODUCT
+        || (__traits(compiles, op(T.init, T.init))
+            && is(typeof(op(T.init, T.init)) == T)
+            && __traits(compiles, e())
+            && is(typeof(e()) == T)))
+{
     private struct TreapNode {
         int size;
         uint priority;
         T value;
+        static if (ENABLE_MONOID_PRODUCT) {
+            T prod;
+        }
+
         TreapNode* parent;
         TreapNode*[2] child;
 
@@ -10,16 +23,29 @@ template Treap (T) {
             size = 1;
             priority = _priority;
             value = _value;
+            static if (ENABLE_MONOID_PRODUCT) {
+                prod = _value;
+            }
             parent = _parent;
         }
 
         void aggregation () {
             size = 1;
+            static if (ENABLE_MONOID_PRODUCT) {
+                prod = value;
+            }
+
             if (child[0] !is null) {
                 size += child[0].size;
+                static if (ENABLE_MONOID_PRODUCT) {
+                    prod = op(child[0].prod, prod);
+                }
             }
             if (child[1] !is null) {
                 size += child[1].size;
+                static if (ENABLE_MONOID_PRODUCT) {
+                    prod = op(prod, child[1].prod);
+                }
             }
         }
         void rotateLeft () {
@@ -95,10 +121,10 @@ template Treap (T) {
         this (Irange) (Irange r)
             if (isInputRange!(Irange) && isImplicitlyConvertible!(ForeachType!(Irange), T))
         {
+            gen.seed(unpredictableSeed());
             foreach (i, value; r.enumerate(0)) {
                 insert(i, value);
             }
-            gen.seed(unpredictableSeed());
         }
 
         private uint randomValue () {
@@ -219,6 +245,43 @@ template Treap (T) {
             root = cur;
         }
 
+        static if (ENABLE_MONOID_PRODUCT) {
+            T prod (const size_t l, const size_t r) const {
+                enforce(0 <= l && l < length());
+                enforce(0 <= r && r <= length());
+                enforce(l <= r);
+
+                T internal_prod (const TreapNode* cur, const size_t cur_l, const size_t cur_r) const {
+                    if (cur is null) {
+                        return e();
+                    }
+                    // 共通部分なし
+                    if (r <= cur_l || cur_r <= l) {
+                        return e();
+                    }
+                    // 包含されている
+                    if (l <= cur_l && cur_r <= r) {
+                        return cur.prod;
+                    }
+
+                    // 現在位置
+                    int key = implicitKeyOf(cur) - 1;
+
+                    // 左区間
+                    T ret = internal_prod(cur.child[0], cur_l, cur_l + key);
+                    if (l <= cur_l + key && cur_l + key < r) {
+                        ret = op(ret, cur.value);
+                    }
+                    // 右区間
+                    ret = op(ret, internal_prod(cur.child[1], cur_l + key + 1, cur_r));
+
+                    return ret;
+                }
+
+                return internal_prod(root, 0, length());
+            }
+        }
+
         private TreapNode* find (size_t index) {
             enforce(index < length());
 
@@ -249,44 +312,38 @@ template Treap (T) {
         // indexアクセス + 代入
         T opIndexAssign (T value, size_t i) {
             enforce(0 <= i && i < length());
-            return find(i).value = value;
+            TreapNode* cur = find(i);
+            cur.value = value;
+            while (cur !is null) {
+                cur.aggregation();
+                cur = cur.parent;
+            }
+            return value;
         }
 
         // indexアクセス + 代入演算子
         T opIndexOpAssign (string op) (T value, size_t i) {
             enforce(0 <= i && i < length());
-            return mixin("find(i).value" ~ op ~ "= value");
+
+            TreapNode* cur = find(i);
+            mixin("cur.value" ~ op ~ "= value;");
+            T ret = cur.value;
+            while (cur !is null) {
+                cur.aggregation();
+                cur = cur.parent;
+            }
+            return ret;
         }
 
         // indexアクセス + 単項演算子
         T opIndexUnary (string op) (size_t i) {
             enforce(0 <= i && i < length());
-            return mixin(op ~ "find(i).value");
+            return mixin(op ~ "find(i).value;");
         }
 
         // $のindex変換
         size_t opDollar () const {
             return length();
-        }
-
-        private void debugDfs () {
-            if (root is null) {
-                return;
-            }
-
-            import std.stdio;
-            stderr.writefln("root: %s", root.value);
-            void dfs (TreapNode* r) {
-                if (r.child[0] !is null) {
-                    writefln("%s %s", r.value, r.child[0].value);
-                    dfs(r.child[0]);
-                }
-                if (r.child[1] !is null) {
-                    writefln("%s %s", r.value, r.child[1].value);
-                    dfs(r.child[1]);
-                }
-            }
-            dfs(root);
         }
 
         size_t length () const {
@@ -307,26 +364,36 @@ template Treap (T) {
     }
 }
 
+import std;
+
 void main () {
-    import std;
+    int N, Q;
+    readln.read(N, Q);
 
-    auto A = new Treap!(int)(10);
-    writeln(A);
-    foreach (i; 0 .. 100) {
-        A.insert(0, i);
+    auto A = readln.split.to!(int[]);
+    auto treap = new Treap!(int, (int a, int b) => a ^ b, () => 0)(A);
+    auto ans = new int[](0);
+
+    foreach (i; 0 .. Q) {
+        int T, X, Y;
+        readln.read(T, X, Y);
+
+        if (T == 1) {
+            treap[X - 1] ^= Y;
+        }
+        if (T == 2) {
+            ans ~= treap.prod(X - 1, Y);
+        }
     }
-    A.debugDfs();
 
-    A[99];
-    ++A[99];
-    --A[99];
-    -A[99];
-    ~A[99];
-    A[0] += 1;
-    A[0] /= 10;
+    writefln("%(%s\n%)", ans);
+}
 
-    foreach (i; 0 .. 10) {
-        writeln(A[i]);
+void read (T...) (string S, ref T args) {
+    import std.conv : to;
+    import std.array : split;
+    auto buf = S.split;
+    foreach (i, ref arg; args) {
+        arg = buf[i].to!(typeof(arg));
     }
-    return;
 }
